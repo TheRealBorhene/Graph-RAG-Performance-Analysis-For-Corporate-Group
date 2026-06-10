@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Recurse -Force -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object FullName)",
+      "PowerShell(head -150)",
+      "Bash(Remove-Item \"C:\\\\Users\\\\pc\\\\Desktop\\\\PFE Graph RAG\\\\src\\\\merger.py\")",
+      "Bash(del \"C:\\\\Users\\\\pc\\\\Desktop\\\\PFE Graph RAG\\\\src\\\\reembed.py\")",
+      "Bash(exist \"C:\\\\Users\\\\pc\\\\Desktop\\\\PFE Graph RAG\\\\data\\\\extractor_checkpoint.json\" del \"C:\\\\Users\\\\pc\\\\Desktop\\\\PFE Graph RAG\\\\data\\\\extractor_checkpoint.json\")",
+      "Bash(rm -f \"/mnt/c/Users/pc/Desktop/PFE Graph RAG/data/extractor_checkpoint.json\" && echo \"Checkpoint deleted\" || echo \"No checkpoint found\")",
+      "Bash(python test_chunks.py)",
+      "Bash(set PYTHONIOENCODING=utf-8)",
+      "Bash(python -u test_chunks.py)",
+      "Bash(python html_to_markdown.py \"10-KLoews.html\" -o \"LoewsCompany.md\")",
+      "Bash(Start-Sleep -Seconds 15)",
+      "Bash(Get-Content \"C:\\\\Users\\\\pc\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-pc-Desktop-PFE-Graph-RAG\\\\8f6ef2c3-6deb-4c72-9c2f-334cf3b4c4be\\\\tasks\\\\bxy5cja8v.output\")",
+      "PowerShell(Get-Process python)",
+      "PowerShell(Stop-Process -Force -Confirm:$false)",
+      "Bash(python -c ' *)",
+      "PowerShell(cd \"C:\\\\Users\\\\pc\\\\Desktop\\\\Html to MD\"; Select-String -Path LoewsCompany.md -Pattern \"\\\\[Table of Contents\\\\]\" | ForEach-Object { \"Line $\\($_.LineNumber\\): $\\($_.Line\\)\" })",
+      "WebSearch",
+      "WebFetch(domain:www.zenml.io)"
+    ]
+  }
+}
