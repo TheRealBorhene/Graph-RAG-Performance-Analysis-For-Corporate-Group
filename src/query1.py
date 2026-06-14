@@ -70,18 +70,23 @@ Node labels and their meaning:
   Parent          — the filing company (e.g. "Loews Corporation")
   Subsidiary      — companies owned by the Parent (e.g. "CNA Financial Corporation")
   Geography       — physical locations (e.g. "United States", "Illinois")
-  BusinessSegment — GAAP reporting segments
+  BusinessSegment — GAAP reporting segments (e.g. "CNA Financial", "Corporate")
   FinancialItem   — enriched financial values whose name encodes both the metric label
                     and the raw value. Format: "Metric Label: $value"
                     Examples: "Net Income: $894", "Total Revenues: $14,931", "Net Income: -$175"
+  IncomeStatement — income statement node for a fiscal year (e.g. "IncomeStatement_FY2019")
+  BalanceSheet    — balance sheet node for a fiscal year (e.g. "BalanceSheet_FY2019")
+  CashFlow        — cash flow statement node for a fiscal year (e.g. "CashFlow_FY2019")
 
 All nodes share the :Entity label and have a `name` property.
 
 Relationship types (read-only):
   (Parent)-[:PARENT_OF]->(Subsidiary)
   (Parent|Subsidiary)-[:OPERATES_IN]->(Geography)
-  (Parent)-[:REPORTED]->(FinancialItem)
-  (Subsidiary)-[:GENERATED]->(FinancialItem)
+  (Subsidiary|BusinessSegment)-[:GENERATED]->(FinancialItem)
+  (Parent)-[:INCOME_STATEMENT]->(IncomeStatement)
+  (Parent)-[:BALANCE_SHEET]->(BalanceSheet)
+  (Parent)-[:CASH_FLOW]->(CashFlow)
 
 CRITICAL — financial relationship properties:
   r.property  = fiscal year only, e.g. "2019", "2018". Never a metric name.
@@ -129,17 +134,25 @@ Rules:
   do not compute MAX/MIN on string fields; let the synthesis decide
 - For loss/negative questions, search for the positive metric name with '-' in f.name,
   never search for a "loss" label
-- For financial metric questions where the relationship type is uncertain
-  (REPORTED vs HAS_METRIC), generate TWO queries — one for each type — to maximise recall.
-  A metric may be stored under either depending on how it was classified during extraction.
-- For revenue/income metric queries on a specific subsidiary, generate TWO queries:
-  one filtering f.name CONTAINS 'Total Revenue' (or 'Total Revenues') and one filtering
-  f.name CONTAINS 'Revenue' without 'Total'. Some subsidiaries store revenue under the
-  aggregate label, others under a shorter label — both must be tried.
+- CRITICAL — source node type for financial metrics:
+  Financial metrics (GENERATED relationships) may be stored under EITHER a Subsidiary node
+  OR a BusinessSegment node depending on how the LLM classified the source during extraction.
+  For ANY financial metric query, ALWAYS generate TWO queries in parallel:
+    one matching (s:Subsidiary)-[:GENERATED]->(f:FinancialItem)
+    one matching (s:BusinessSegment)-[:GENERATED]->(f:FinancialItem)
+  Never query only Subsidiary or only BusinessSegment — always both.
+- For revenue/income metric queries, generate queries filtering f.name CONTAINS 'Revenue'
+  broadly. Also try f.name CONTAINS 'Total Revenues' as a second query for aggregate totals.
 - For geographic aggregation questions (most locations, most countries, etc.):
   Geography nodes include cities, states/provinces, and countries mixed together.
   Return the full list of geography names — do NOT return a raw count and call it
   "number of countries". Let the synthesis interpret the list.
+- For ownership lookup questions ("who owns X", "what is the parent of X"):
+  A subsidiary may be owned by the filing Parent OR by another Subsidiary (sub-to-sub ownership).
+  Always generate TWO queries:
+    one matching (p:Parent)-[:PARENT_OF]->(s:Subsidiary {{name: 'X'}})
+    one matching (p:Subsidiary)-[:PARENT_OF]->(s:Subsidiary {{name: 'X'}})
+  Never query only Parent as the owner — always check both.
 - For reverse geographic lookup questions ("which entities operate in [place]"):
   Generate TWO queries — one matching the exact place name (e.g. g.name = 'United States')
   and one matching geography nodes that CONTAIN the place name
@@ -354,7 +367,9 @@ if __name__ == "__main__":
 
         # detect filing company from the Parent node in the graph
         with driver.session() as session:
-            rec = session.run("MATCH (p:Parent) RETURN p.name AS name LIMIT 1").single()
+            rec = session.run(
+                "MATCH (p:Parent)-[:PARENT_OF]->() RETURN p.name AS name LIMIT 1"
+            ).single()
             filing_company = rec["name"] if rec else "Unknown Company"
 
         # ── single-question mode: python query.py "question" ──────────────

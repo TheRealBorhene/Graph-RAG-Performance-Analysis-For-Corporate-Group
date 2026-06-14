@@ -3,7 +3,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from loader import load_document
 from chunker import chunk_document, embed_and_store, fetch_chunks_from_qdrant
-from extractor import extract_graph, merge_graph, enrich_financial_items
+from extractor import extract_graph, merge_graph, enrich_financial_items, drop_orphaned_financial_items
 from graph import store_graph
 
 load_dotenv()
@@ -54,6 +54,9 @@ graph = merge_graph(graph)
 graph["entities"], graph["relationships"] = enrich_financial_items(
     graph["entities"], graph["relationships"]
 )
+
+# step 7.75: drop Financial Items with no relationship pointing to them
+graph["entities"] = drop_orphaned_financial_items(graph["entities"], graph["relationships"])
 
 # step 8: save the graph result
 graph_output_path = "../data/graph_output.json"

@@ -13,7 +13,10 @@ LABEL_MAP = {
     "Subsidiary":       "Subsidiary",
     "Geography":        "Geography",
     "Business Segment": "BusinessSegment",
-    "Financial Item":   "FinancialItem"
+    "Financial Item":   "FinancialItem",
+    "BalanceSheet":     "BalanceSheet",
+    "IncomeStatement":  "IncomeStatement",
+    "CashFlow":         "CashFlow",
 }
 
 
@@ -47,17 +50,24 @@ def create_nodes(session, entities: list[dict]) -> None:
     for entity in entities:
         label = LABEL_MAP.get(entity["type"])
         if not label:
-            print(f"  ⚠ Unknown entity type '{entity['type']}' — skipping '{entity['name']}'")
+            print(f"  [WARN] Unknown entity type '{entity['type']}' — skipping '{entity['name']}'")
             skipped += 1
             continue
 
+        # Merge the node, then set standard metadata fields.
+        # For statement nodes, also spread their properties dict onto the node
+        # using SET n += $props (adds/updates without removing existing keys —
+        # this is what allows cross-chunk partial statement merging to accumulate).
+        props = entity.get("properties") or {}
         session.run(
             f"MERGE (n:Entity:{label} {{name: $name}}) "
+            f"SET n += $props "
             f"SET n.type        = $type, "
             f"    n.chunk_id    = $chunk_id, "
             f"    n.file        = $file, "
             f"    n.page_number = $page_number",
             name        = entity["name"],
+            props       = props,
             type        = entity["type"],
             chunk_id    = entity.get("chunk_id"),
             file        = entity.get("file"),

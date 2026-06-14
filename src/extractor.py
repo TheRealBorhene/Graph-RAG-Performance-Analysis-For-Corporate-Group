@@ -61,12 +61,23 @@ def detect_filing_company(chunks: list[dict], client) -> str:
 # ─────────────────────────────────────────────
 
 def merge_graph(graph: dict) -> dict:
-    """Deduplicate entities and relationships produced across chunks."""
+    """Deduplicate entities and relationships produced across chunks.
+
+    Statement nodes (BalanceSheet, IncomeStatement, CashFlow) seen in multiple
+    chunks have their properties dicts merged so that partial views of the same
+    statement (e.g. Assets chunk + Liabilities chunk) are combined into one node.
+    """
+    STATEMENT_TYPES = {"BalanceSheet", "IncomeStatement", "CashFlow"}
+
     seen_entities: dict[tuple, dict] = {}
     for entity in graph["entities"]:
         key = (entity["name"], entity["type"])
         if key not in seen_entities:
             seen_entities[key] = entity
+        elif entity["type"] in STATEMENT_TYPES and entity.get("properties"):
+            # Merge partial statement views from different chunks
+            existing_props = seen_entities[key].setdefault("properties", {})
+            existing_props.update(entity["properties"])
 
     seen_relationships: dict[tuple, dict] = {}
     for rel in graph["relationships"]:
@@ -76,51 +87,40 @@ def merge_graph(graph: dict) -> dict:
         elif seen_relationships[key].get("property") is None and rel.get("property") is not None:
             seen_relationships[key]["property"] = rel["property"]
 
-    unique_entities      = list(seen_entities.values())
-    unique_relationships = list(seen_relationships.values())
+    unique_entities = list(seen_entities.values())
+    deduped_rels    = list(seen_relationships.values())
 
-    # Cross-chunk GENERATED / REPORTED collision guard
-    reported_targets = {r["target"] for r in unique_relationships if r["type"] == "REPORTED"}
-    before           = len(unique_relationships)
-    unique_relationships = [
-        r for r in unique_relationships
-        if not (r["type"] == "GENERATED" and r["target"] in reported_targets)
-    ]
-    if len(unique_relationships) < before:
-        drop(f"Dropped {before - len(unique_relationships)} GENERATED relationship(s) targeting company-level REPORTED values (cross-chunk)")
+    # Secondary pass: same (source, type, property) but different target format
+    # e.g. "$1,161 million" and "$1,161" are the same metric — keep the more explicit one.
+    prop_groups: dict[tuple, list[dict]] = {}
+    for rel in deduped_rels:
+        prop = rel.get("property")
+        if prop and rel.get("type") == "GENERATED":
+            group_key = (rel["source"], rel["type"], prop)
+            prop_groups.setdefault(group_key, []).append(rel)
 
-    # Sign-conflict resolution guard
-    # When the same (source, property) has both a strong relationship (REPORTED/GENERATED)
-    # pointing to a positive value AND a HAS_METRIC pointing to its negation,
-    # the HAS_METRIC is a duplicate extracted from a cash-flow sign convention.
-    # Keep the stronger type and drop the HAS_METRIC.
-    def _abs_value(target: str) -> str | None:
-        """Return the absolute string value of a financial target, or None if not parseable."""
-        t = str(target).strip().lstrip("-")
-        if t.startswith("$-"):
-            t = "$" + t[2:]
-        return t
+    dropped_format_dups = 0
+    survivors: set[int] = set()
+    dup_ids:   set[int] = set()
+    for group in prop_groups.values():
+        if len(group) == 1:
+            continue
+        # Prefer target with an explicit unit suffix; otherwise prefer longer string
+        best = max(group, key=lambda r: (
+            any(u in r["target"].lower() for u in ("million", "billion", "trillion")),
+            len(r["target"])
+        ))
+        for rel in group:
+            if rel is not best:
+                dup_ids.add(id(rel))
+                dropped_format_dups += 1
 
-    strong_prop_pairs: set[tuple] = {
-        (r["source"], _abs_value(r["target"]), r.get("property"))
-        for r in unique_relationships
-        if r["type"] in ("REPORTED", "GENERATED") and r.get("property")
-    }
-    before = len(unique_relationships)
-    unique_relationships = [
-        r for r in unique_relationships
-        if not (
-            r["type"] == "HAS_METRIC"
-            and r.get("property")
-            and (r["source"], _abs_value(r["target"]), r.get("property")) in strong_prop_pairs
-        )
-    ]
-    if len(unique_relationships) < before:
-        drop(f"Dropped {before - len(unique_relationships)} HAS_METRIC(s) that were sign-inverted duplicates of REPORTED/GENERATED values")
+    unique_relationships = [r for r in deduped_rels if id(r) not in dup_ids]
 
     print(f"Merge complete:")
-    print(f"  Entities      : {len(graph['entities'])} ->{len(unique_entities)}")
-    print(f"  Relationships : {len(graph['relationships'])} ->{len(unique_relationships)}")
+    print(f"  Entities      : {len(graph['entities'])} -> {len(unique_entities)}")
+    print(f"  Relationships : {len(graph['relationships'])} -> {len(unique_relationships)}"
+          + (f"  ({dropped_format_dups} format-duplicate(s) removed)" if dropped_format_dups else ""))
 
     return {"entities": unique_entities, "relationships": unique_relationships}
 
@@ -147,7 +147,7 @@ def enrich_financial_items(entities: list[dict], relationships: list[dict]) -> t
       original entity is kept alongside the new labelled one.
     - Called after merge_graph() so it operates on clean, deduplicated data.
     """
-    financial_types = {"REPORTED", "GENERATED", "HAS_METRIC"}
+    financial_types = {"GENERATED"}
 
     rename_ops: list[tuple[int, str, str, str]] = []
     for idx, rel in enumerate(relationships):
@@ -206,6 +206,30 @@ def enrich_financial_items(entities: list[dict], relationships: list[dict]) -> t
 
 
 # ─────────────────────────────────────────────
+# ORPHANED FINANCIAL ITEM FILTER
+# ─────────────────────────────────────────────
+
+def drop_orphaned_financial_items(entities: list[dict], relationships: list[dict]) -> list[dict]:
+    """
+    Remove Financial Item entities that are not the target of any relationship.
+    These are numeric values extracted from tables (reserve development rows,
+    footnote tables, etc.) that Agent 3 never linked to a segment or subsidiary.
+    They add noise to the graph without contributing any queryable information.
+    Called after merge_graph() and enrich_financial_items().
+    """
+    rel_targets = {rel["target"] for rel in relationships if rel.get("target")}
+    before = len(entities)
+    kept = [
+        e for e in entities
+        if e["type"] != "Financial Item" or e["name"] in rel_targets
+    ]
+    dropped = before - len(kept)
+    if dropped:
+        print(f"  Dropped {dropped} orphaned Financial Item(s) with no incoming relationship")
+    return kept
+
+
+# ─────────────────────────────────────────────
 # EXTRACTION
 # ─────────────────────────────────────────────
 
@@ -261,16 +285,6 @@ def extract_graph(chunks: list[dict]) -> dict:
                     time.sleep(SLEEP_BETWEEN_CHUNKS)
                 continue
 
-            # Per-chunk GENERATED / REPORTED collision guard
-            reported_targets_chunk = {r["target"] for r in chunk_relationships if r["type"] == "REPORTED"}
-            before = len(chunk_relationships)
-            chunk_relationships = [
-                r for r in chunk_relationships
-                if not (r["type"] == "GENERATED" and r["target"] in reported_targets_chunk)
-            ]
-            if len(chunk_relationships) < before:
-                drop(f"Dropped {before - len(chunk_relationships)} GENERATED relationship(s) targeting company-level REPORTED values")
-
         except Exception as e:
             warn(f"API error on chunk {chunk_id}: {e}")
             if "rate_limit" in str(e).lower() or "429" in str(e):
@@ -290,7 +304,8 @@ def extract_graph(chunks: list[dict]) -> dict:
         entity_type_map = {e["name"]: e["type"] for e in all_entities} | {filing_company: "Parent"}
         chunk_relationships = validate_relationships(
             chunk_relationships, entity_names, entity_type_map,
-            chunk_id, chunk_a["metadata"]["file"], page_number, run_timestamp, all_entities)
+            chunk_id, chunk_a["metadata"]["file"], page_number, run_timestamp,
+            all_entities, current_text)
         all_relations.extend(chunk_relationships)
 
         print(f"  -----------------------------------------")

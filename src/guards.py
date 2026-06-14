@@ -29,22 +29,14 @@ PAREN_NEGATIVE_PATTERN = re.compile(
     re.IGNORECASE
 )
 
-# Keywords that identify a candidate as a regulatory body / institution rather
-# than a geographic location.
-REGULATORY_BODY_PATTERN = re.compile(
-    r'\b(department|authority|commission|association|commissioners|supervisors|'
-    r'superintendent|monetary|institute|bureau|committee|council|'
-    r'office\s+of|board\s+of)\b',
-    re.IGNORECASE
-)
-
 # Geography names that are too broad/vague to be useful in the graph.
 TOO_BROAD_GEO_PATTERN = re.compile(
     r'^(north america|south america|latin america|central america|'
     r'europe|asia|africa|middle east|oceania|pacific|'
     r'apac|emea|americas|worldwide|global|international|'
     r'rest of world|other|western europe|eastern europe|'
-    r'southeast asia|east asia|south asia|sub-saharan africa)$',
+    r'southeast asia|east asia|south asia|sub-saharan africa|'
+    r'gulf coast|midwest|northeast|northwest|southeast|southwest)$',
     re.IGNORECASE
 )
 
@@ -57,7 +49,7 @@ _LEGAL_SUFFIX = re.compile(
 )
 
 # Characters either side of a Business Segment name to search for GAAP phrases.
-SEGMENT_WINDOW = 50
+SEGMENT_WINDOW = 200
 
 # Matches date-like strings that should never appear as Financial Item values.
 DATE_STRING_PATTERN = re.compile(
@@ -95,7 +87,13 @@ PEER_CONTEXT_PATTERN = re.compile(
 )
 
 # GAAP phrases required to validate a Business Segment entity.
-GAAP_PHRASES = ("reportable segment", "operating segment", "business segment")
+# Broader set to match segment reporting tables, narratives, and headers.
+GAAP_PHRASES = (
+    "reportable segment", "operating segment", "business segment",
+    "segment result", "segment income", "segment loss", "segment revenue",
+    "segment operating", "by segment", "our segment", "segment information",
+    "segment data", "segment performance",
+)
 
 # Keywords in a Financial Item's name that immediately identify it as a non-financial metric.
 NON_FINANCIAL_NAME = re.compile(
@@ -169,6 +167,27 @@ def _normalize_sub(name: str) -> str:
     return n.strip()
 
 
+def _segment_canonical(subsidiary_name: str) -> str:
+    """
+    Derive the canonical Business Segment short name from a Subsidiary's legal name.
+    Same logic as _normalize_sub but preserves original casing — strips legal suffixes
+    iteratively until stable, without lowercasing.
+    Examples:
+      "CNA Financial Corporation"        → "CNA Financial"
+      "Diamond Offshore Drilling, Inc."  → "Diamond Offshore Drilling"
+      "Boardwalk Pipeline Partners, LP"  → "Boardwalk Pipeline"
+      "Loews Hotels Holding Corporation" → "Loews Hotels"
+      "Altium Packaging LLC"             → "Altium Packaging"
+    """
+    n = subsidiary_name.strip()
+    while True:
+        stripped = _LEGAL_SUFFIX.sub('', n).strip().rstrip('&,. ').strip()
+        if stripped == n or not stripped:
+            break
+        n = stripped
+    return n
+
+
 # ─────────────────────────────────────────────
 # POST-AGENT-2 ENTITY GUARDS
 # ─────────────────────────────────────────────
@@ -227,15 +246,6 @@ def apply_entity_guards(entities: list[dict], text: str, filing_company: str,
             if entity["name"] != filing_company:
                 info(f"Parent name normalised: '{entity['name']}' → '{filing_company}'")
                 entity["name"] = filing_company
-
-    # Geography regulatory body guard
-    before   = len(entities)
-    entities = [
-        e for e in entities
-        if not (e["type"] == "Geography" and REGULATORY_BODY_PATTERN.search(e["name"]))
-    ]
-    if len(entities) < before:
-        drop(f"Dropped {before - len(entities)} Geography entity(ies) identified as regulatory bodies/institutions")
 
     # Geography too-broad guard
     before   = len(entities)
@@ -368,6 +378,28 @@ def apply_entity_guards(entities: list[dict], text: str, filing_company: str,
     if len(entities) < before:
         drop(f"Dropped {before - len(entities)} Business Segment(s) failing adjacency check")
 
+    # Business Segment canonical name resolution
+    # After the adjacency guard, normalize each segment name to a stable canonical
+    # form derived from its matching confirmed subsidiary. This ensures that "CNA
+    # Financial", "CNA Financial Corporation", and "CNA Financial Corp" all converge
+    # to the same node name ("CNA Financial") across chunks.
+    _conf_list = list(_confirmed)
+    for ent in entities:
+        if ent["type"] != "Business Segment":
+            continue
+        ent_norm = _normalize_sub(ent["name"])
+        matched_sub = next(
+            (sub for sub in _conf_list
+             if ent_norm and _normalize_sub(sub)
+             and (ent_norm in _normalize_sub(sub) or _normalize_sub(sub) in ent_norm)),
+            None,
+        )
+        if matched_sub:
+            canonical = _segment_canonical(matched_sub)
+            if ent["name"] != canonical:
+                info(f"Segment name canonicalised: '{ent['name']}' → '{canonical}'")
+                ent["name"] = canonical
+
     # Parenthetical negative normalisation
     for entity in entities:
         if entity["type"] == "Financial Item":
@@ -397,7 +429,8 @@ def apply_entity_guards(entities: list[dict], text: str, filing_company: str,
 def validate_relationships(relationships: list[dict], entity_names: set,
                            entity_type_map: dict, chunk_id: int,
                            file: str, page_number: int,
-                           run_timestamp: str, all_entities: list[dict]) -> list[dict]:
+                           run_timestamp: str, all_entities: list[dict],
+                           chunk_text: str = "") -> list[dict]:
     """Validate Agent 3 relationships: fix $ prefixes, auto-register FIs, check types."""
 
     dollar_normalised = {
@@ -455,11 +488,41 @@ def validate_relationships(relationships: list[dict], entity_names: set,
                 rel["source"] = canonical_src
                 src = canonical_src
 
+        # Fix 1 — Sub-segment GENERATED fallback
+        # Agent 3 sometimes uses a sub-segment row header (e.g. "Specialty",
+        # "Commercial", "International") as the GENERATED source instead of the
+        # owning subsidiary.  These names are not in entity_names so the normal
+        # alias resolver above can't help.
+        #
+        # Strategy: search the chunk TEXT for mentions of known Subsidiary names.
+        # The text is the ground truth — even if the LLM failed to extract a
+        # subsidiary as an entity this run, the subsidiary's name still appears
+        # in the text.  If exactly one confirmed Subsidiary is mentioned in the
+        # chunk text, it unambiguously owns the sub-segment.  If multiple are
+        # found, attribution would be a guess so we fall through and let the
+        # existence check below drop the relationship.
+        #
+        # This fixes the regression where chunk-entity scan picked Diamond Offshore
+        # (the only Subsidiary the LLM happened to extract in chunk 53) instead of
+        # CNA Financial Corporation (whose name appears throughout the chunk text).
+        if src and src not in entity_names and rel_type == "GENERATED" and chunk_text:
+            text_lower = chunk_text.lower()
+            text_matched_subs = list(dict.fromkeys(
+                name for name in entity_names
+                if entity_type_map.get(name) == "Subsidiary"
+                and (name.lower() in text_lower
+                     or (_normalize_sub(name) and _normalize_sub(name) in text_lower))
+            ))
+            if len(text_matched_subs) == 1:
+                info(f"Sub-segment source re-routed: '{src}' → '{text_matched_subs[0]}'")
+                rel["source"] = text_matched_subs[0]
+                src = text_matched_subs[0]
+
         src_in = src in entity_names
         tgt_in = tgt in entity_names
 
-        # Financial value auto-registration
-        if (rel_type in ("GENERATED", "REPORTED", "HAS_METRIC")
+        # Financial value auto-registration (GENERATED only — REPORTED and HAS_METRIC removed)
+        if (rel_type == "GENERATED"
                 and src_in and not tgt_in
                 and FINANCIAL_VALUE_PATTERN.match(str(tgt or ""))):
             all_entities.append({"name": tgt, "type": "Financial Item",
@@ -484,6 +547,46 @@ def validate_relationships(relationships: list[dict], entity_names: set,
             src, tgt = rel["source"], rel["target"]
             src_type = entity_type_map.get(src, "")
 
+        # Fix 2 — Business Segment OPERATES_IN re-routing
+        # When a chunk yields a canonical segment name (e.g. "Loews Hotels",
+        # "Boardwalk Pipeline") Agent 3 sometimes uses that segment as the
+        # OPERATES_IN source instead of the legal subsidiary.  OPERATES_IN only
+        # allows Parent or Subsidiary sources, so we handle two sub-cases:
+        #
+        #   2a: Dual-type conflict — same entity name registered as both Subsidiary
+        #       and Business Segment (e.g. "CNA Financial Corporation").
+        #       entity_type_map last-write-wins may have set it to Business Segment.
+        #       If all_entities contains it as a Subsidiary anywhere, Subsidiary wins.
+        #
+        #   2b: Short segment name — "Loews Hotels", "Boardwalk Pipeline" etc.
+        #       These are canonical segment names distinct from the subsidiary's
+        #       legal name.  Use _normalize_sub matching to find the real subsidiary.
+        if rel_type == "OPERATES_IN" and src_type == "Business Segment":
+            # 2a: dual-type conflict — same name exists as Subsidiary in all_entities
+            if any(e["name"] == src and e["type"] == "Subsidiary" for e in all_entities):
+                info(f"Dual-type resolved: '{src}' treated as Subsidiary for OPERATES_IN")
+                src_type = "Subsidiary"
+            else:
+                # 2b: short segment name — find matching subsidiary by normalised name
+                src_norm = _normalize_sub(src)
+                matched_sub = next(
+                    (name for name in entity_names
+                     if entity_type_map.get(name) == "Subsidiary"
+                     and src_norm
+                     and _normalize_sub(name)
+                     and (src_norm in _normalize_sub(name) or _normalize_sub(name) in src_norm)),
+                    None
+                )
+                if matched_sub:
+                    info(f"Segment OPERATES_IN source re-routed: '{src}' → '{matched_sub}'")
+                    rel["source"] = matched_sub
+                    src = matched_sub
+                    src_type = "Subsidiary"
+                else:
+                    warn(f"Dropped OPERATES_IN: source '{src}' is [Business Segment] and no matching subsidiary found")
+                    log_error(run_timestamp, chunk_id, f"Invalid OPERATES_IN: source='{src}' type=[{src_type}]")
+                    continue
+
         if rel_type == "OPERATES_IN" and src_type not in ("Parent", "Subsidiary"):
             warn(f"Dropped OPERATES_IN: source '{src}' is [{src_type}]  -  must be Parent or Subsidiary")
             log_error(run_timestamp, chunk_id, f"Invalid OPERATES_IN: source='{src}' type=[{src_type}]")
@@ -492,14 +595,6 @@ def validate_relationships(relationships: list[dict], entity_names: set,
         if rel_type == "OPERATES_IN" and tgt_type != "Geography":
             warn(f"Dropped OPERATES_IN: target '{tgt}' is [{tgt_type}]  -  must be Geography")
             log_error(run_timestamp, chunk_id, f"Invalid OPERATES_IN: target='{tgt}' type=[{tgt_type}]")
-            continue
-        if rel_type == "REPORTED" and src_type != "Parent":
-            warn(f"Dropped REPORTED: source '{src}' is [{src_type}]  -  must be Parent")
-            log_error(run_timestamp, chunk_id, f"Invalid REPORTED: source='{src}' type=[{src_type}]")
-            continue
-        if rel_type == "HAS_METRIC" and src_type not in ("Parent", "Subsidiary"):
-            warn(f"Dropped HAS_METRIC: source '{src}' is [{src_type}]  -  must be Parent or Subsidiary")
-            log_error(run_timestamp, chunk_id, f"Invalid HAS_METRIC: source='{src}' type=[{src_type}]")
             continue
         if rel_type == "GENERATED" and src_type not in ("Business Segment", "Subsidiary"):
             warn(f"Dropped GENERATED: source '{src}' is [{src_type}]  -  must be Business Segment or Subsidiary")
