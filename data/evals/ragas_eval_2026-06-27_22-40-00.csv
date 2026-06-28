@@ -1,0 +1,22 @@
+timestamp,question,source,faithfulness,answer_relevancy,answer_correctness,answer,ground_truth
+2026-06-27_22-40-00,What subsidiaries does Loews Corporation own?,graph,0.0,0.9928058011066178,0.6074984609705909,"Loews Corporation owns the following subsidiaries: 
+
+- BPHC
+- Altium Packaging LLC
+- Loews Hotels Holding Corporation
+- Boardwalk Pipeline Partners, LP
+- Diamond Offshore Drilling, Inc.
+- CNA Financial Corporation","Loews Corporation owns six subsidiaries: CNA Financial Corporation, Diamond Offshore Drilling Inc., Boardwalk Pipeline Partners LP, Loews Hotels Holding Corporation, Altium Packaging LLC, and BPHC (Boardwalk Pipelines Holding Corp)."
+2026-06-27_22-40-00,How much net income did CNA Financial Corporation generate in 2019?,graph,1.0,0.7992686566995862,0.8431702797195373,"CNA Financial Corporation generated net income attributable to Loews Corporation of $894 million in 2019 (Graph, IncomeStatement_FY2019).",CNA Financial Corporation generated net income of $894 million attributable to Loews Corporation in fiscal year 2019.
+2026-06-27_22-40-00,What was CNA Financial Corporation's net income in 2018?,graph,1.0,0.7596670897973948,0.6140209607694649,"CNA Financial Corporation reported net income attributable to Loews Corporation of $726 million in 2018 (Graph, IncomeStatement_FY2018).",CNA Financial Corporation generated net income of $726 million attributable to Loews Corporation in fiscal year 2018.
+2026-06-27_22-40-00,Where does Boardwalk Pipeline Partners operate?,graph,1.0,0.9601220155167908,0.8808526822039776,"Boardwalk Pipeline Partners operates in the following locations: Louisiana, Ohio, Indiana, Illinois, Tennessee, Arkansas, Oklahoma, Kentucky, and Texas within the United States (U.S.).","Boardwalk Pipeline Partners operates pipelines and storage facilities across nine U.S. states: Oklahoma, Arkansas, Tennessee, Kentucky, Illinois, Indiana, Ohio, Louisiana, and Texas."
+2026-06-27_22-40-00,What was the contract backlog of Diamond Offshore in 2020?,vector,1.0,0.9189202448698564,0.4846371256647597,"Diamond Offshore reported a contract drilling backlog of $1.6 billion as of January 1, 2020, with $802 million expected in 2020, $486 million in 2021, and an aggregate of $323 million in 2022 through 2023 (Source, p.54).",Diamond Offshore Drilling reported a contract backlog of $1.6 billion at the start of fiscal year 2020.
+2026-06-27_22-40-00,Which Loews subsidiaries reported a net loss in 2019?,graph,0.5,1.0000000000000002,0.5716702406830559,"In 2019, the Loews subsidiaries that reported a net loss were:
+
+- Diamond Offshore Drilling, Inc. with a net loss of $175 million (Graph, p.49).
+- Loews Hotels Holding Corporation with a net loss of $31 million (Graph, p.49).
+- Loews Hotels reported a net loss attributable to Loews Corporation of $31 million (Graph, p.59).",Two Loews subsidiaries reported a net loss in 2019: Diamond Offshore Drilling (-$175 million) and Loews Hotels Holding Corporation (-$31 million).
+2026-06-27_22-40-00,Who is the parent company of Altium Packaging LLC?,graph,1.0,0.9151292009105308,0.9882232930575809,Altium Packaging LLC is a subsidiary of Loews Corporation.,"Altium Packaging LLC is owned by Loews Corporation, its parent company."
+2026-06-27_22-40-00,What were Diamond Offshore Drilling's contract drilling revenues in 2019?,graph,1.0,1.0,0.7349313888585829,"Diamond Offshore Drilling reported contract drilling revenues of $981 million in 2019 (Graph, IncomeStatement_FY2019).","Diamond Offshore Drilling reported contract drilling revenues of approximately $935 million on a standalone basis, or $981 million as reported in the Loews consolidated income statement for fiscal year 2019."
+2026-06-27_22-40-00,What were CNA's insurance premiums in 2019?,graph,0.0,0.0,0.15020305160793615,The graph data does not contain information about CNA's insurance premiums in 2019.,"CNA Financial reported net earned insurance premiums of $7,428 million in fiscal year 2019."
+2026-06-27_22-40-00,What was Diamond Offshore Drilling's net loss in 2018?,graph,1.0,0.8421432185959371,0.9949994375297432,"Diamond Offshore Drilling reported a net loss attributable to Loews Corporation of $112 million in 2018 (Graph, IncomeStatement_FY2018).",Diamond Offshore Drilling reported a net loss of $112 million attributable to Loews Corporation in fiscal year 2018.

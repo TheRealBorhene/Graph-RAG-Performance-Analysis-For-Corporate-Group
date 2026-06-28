@@ -48,6 +48,56 @@ Return ONLY valid JSON:
 If none found, return: {{"relationships": []}}"""
 
 
+def build_governance_prompt(filing_company: str) -> str:
+    """Segment 3 — board / governance relationships (BOARD_MEMBER_OF only)."""
+    return f"""You are finding GOVERNANCE relationships between validated Person entities
+and the companies they govern in a financial document.
+The filing company is: {filing_company}
+
+You will receive a list of validated entities (Persons, Parent, Subsidiaries) and the
+original text.
+
+CRITICAL RULES:
+1. source and target MUST be taken verbatim from the entity list. Never invent a name.
+2. Only extract what is explicitly stated in the text — never infer.
+3. If no valid relationship can be formed, return an empty list.
+
+════════════════════════════════════════════
+RELATIONSHIP TYPE
+════════════════════════════════════════════
+
+BOARD_MEMBER_OF — A Person serves on the board of (or as a senior governance officer of)
+  a Parent or Subsidiary entity
+    source: Person  |  target: Parent or Subsidiary
+    Only extract when the text states the person holds a board or senior governance
+    role at the target company. Trigger on roles containing any of:
+      "Director", "Chairman", "Vice Chairman", "Board of Directors",
+      "Chief Executive Officer", "Chief Financial Officer", "President",
+      "Senior Vice President", "Vice President", "General Counsel", "Secretary",
+      "Treasurer", "Chief Investment Officer", "Chief Operating Officer",
+      "Office of the President"
+
+    Store the role string verbatim in `property`. Examples (generic):
+      "Co-Chairman of the Board"
+      "President and Chief Executive Officer"
+      "Senior Vice President and Chief Financial Officer"
+
+    Do NOT extract for:
+      - People mentioned only as employees, advisors, or consultants
+      - People described in third-party contexts (litigation, citations)
+      - Companies where the person is NOT serving in a governance capacity
+
+════════════════════════════════════════════
+RULES
+════════════════════════════════════════════
+- Only extract what is explicitly stated — never infer
+- The property field holds the role as it appears in the document, verbatim
+
+Return ONLY valid JSON:
+{{"relationships": [{{"source": "person name", "target": "company name", "type": "BOARD_MEMBER_OF", "property": "role string"}}]}}
+If none found, return: {{"relationships": []}}"""
+
+
 def build_generated_prompt(filing_company: str) -> str:
     """Segment 2 — segment and subsidiary revenue/income (GENERATED only)."""
     return f"""You are finding GENERATED relationships between validated entities in a financial document.
@@ -172,6 +222,23 @@ def find_relationships(client: OpenAI, text: str, filing_company: str,
         relationships.extend(seg2)
     else:
         info("Agent 3 [generated]   : skipped (no segment/subsidiary or no Financial Items)")
+
+    # ── Segment 3: BOARD_MEMBER_OF (governance) ──────────────────────────────
+    # Only runs when the chunk has at least one Person entity AND a company entity
+    # to attach them to — avoids wasted API calls on chunks with no governance data.
+    has_persons   = any(e["type"] == "Person" for e in non_fi)
+    has_companies = any(e["type"] in ("Parent", "Subsidiary") for e in non_fi)
+    if has_persons and has_companies:
+        try:
+            seg3 = _call_segment(build_governance_prompt(filing_company), non_fi)
+            info(f"Agent 3 [governance]  : {len(seg3)} relationship(s)")
+            relationships.extend(seg3)
+        except Exception as err:
+            warn(f"Agent 3 [governance] failed: {err}")
+            log_error(run_timestamp, chunk_id, f"Agent 3 [governance] error: {err}")
+        time.sleep(SLEEP_BETWEEN_AGENTS)
+    else:
+        info("Agent 3 [governance]  : skipped (no Person or no Parent/Subsidiary)")
 
     # ── Deduplicate ───────────────────────────────────────────────────────────
     seen_rels: set[tuple] = set()

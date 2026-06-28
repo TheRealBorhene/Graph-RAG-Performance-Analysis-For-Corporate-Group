@@ -1,7 +1,9 @@
-import os
 import json
 from dotenv import load_dotenv
-from neo4j import GraphDatabase
+
+# Reuse the single Neo4j connect factory in query1.py — keeps env vars,
+# defaults and `verify_connectivity` in one place.
+from query1 import connect_neo4j as connect
 
 load_dotenv()
 
@@ -14,24 +16,11 @@ LABEL_MAP = {
     "Geography":        "Geography",
     "Business Segment": "BusinessSegment",
     "Financial Item":   "FinancialItem",
+    "Person":           "Person",
     "BalanceSheet":     "BalanceSheet",
     "IncomeStatement":  "IncomeStatement",
     "CashFlow":         "CashFlow",
 }
-
-
-# ─────────────────────────────────────────────
-# CONNECTION
-# ─────────────────────────────────────────────
-def connect() -> GraphDatabase.driver:
-    uri      = os.getenv("NEO4J_URI",      "bolt://localhost:7687")
-    user     = os.getenv("NEO4J_USER",     "neo4j")
-    password = os.getenv("NEO4J_PASSWORD", "password")
-
-    driver = GraphDatabase.driver(uri, auth=(user, password))
-    driver.verify_connectivity()
-    print(f"Connected to Neo4j at {uri}")
-    return driver
 
 
 # ─────────────────────────────────────────────

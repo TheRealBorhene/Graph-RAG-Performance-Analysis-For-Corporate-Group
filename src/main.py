@@ -3,7 +3,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from loader import load_document
 from chunker import chunk_document, embed_and_store, fetch_chunks_from_qdrant
-from extractor import extract_graph, merge_graph, enrich_financial_items, drop_orphaned_financial_items
+from extractor import extract_graph, merge_graph, canonicalize_segment_names, enrich_financial_items, drop_orphaned_financial_items
 from graph import store_graph
 
 load_dotenv()
@@ -48,6 +48,11 @@ graph = extract_graph(relevant_chunks)
 
 # step 7: deduplicate entities and relationships across chunks
 graph = merge_graph(graph)
+
+# step 7.1: collapse fragmented Business Segment names to their canonical short form
+#           (global re-run of the per-chunk canonicalisation, now that all subsidiaries
+#           are known) and drop redundant orphan segment nodes
+graph = canonicalize_segment_names(graph)
 
 # step 7.5: enrich Financial Item nodes — rename from raw values to 'Label: value'
 #           and simplify relationship properties to just the fiscal year

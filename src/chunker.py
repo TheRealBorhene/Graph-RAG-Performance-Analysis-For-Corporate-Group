@@ -6,6 +6,10 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 from sentence_transformers import SentenceTransformer
 
+# Shared embedding model name + Qdrant factory — query1.py is the single source
+# of truth so chunker (ingestion) and query1 (retrieval) can never drift apart.
+from query1 import EMBED_MODEL_NAME, qdrant_client
+
 
 # ─────────────────────────────────────────────
 # STEP 1 : CHUNKING
@@ -72,8 +76,8 @@ def chunk_document(text: str, source: str, pages_per_chunk: int = 1) -> list[dic
 # ─────────────────────────────────────────────
 def embed_and_store(chunks: list[dict], collection_name: str) -> QdrantClient:
 
-    # load the embedding model
-    model = SentenceTransformer("all-MiniLM-L6-v2")
+    # load the embedding model (single source of truth: query1.EMBED_MODEL_NAME)
+    model = SentenceTransformer(EMBED_MODEL_NAME)
 
     # extract just the text from each chunk
     texts = [chunk["text"] for chunk in chunks]
@@ -82,11 +86,8 @@ def embed_and_store(chunks: list[dict], collection_name: str) -> QdrantClient:
     print(f"Embedding {len(texts)} chunks...")
     vectors = model.encode(texts, show_progress_bar=True)
 
-    # connect to qdrant using values from .env
-    client = QdrantClient(
-        host=os.getenv("QDRANT_HOST"),
-        port=int(os.getenv("QDRANT_PORT"))
-    )
+    # connect to qdrant via the shared factory (single source of truth for connection config)
+    client = qdrant_client()
 
     # always recreate the collection to avoid stale chunks from previous runs
     existing_collections = [c.name for c in client.get_collections().collections]

@@ -4,20 +4,37 @@ import json
 from dotenv import load_dotenv
 from openai import OpenAI
 from neo4j import GraphDatabase
+from qdrant_client import QdrantClient
+from sentence_transformers import SentenceTransformer
 
 load_dotenv()
 
 # ─────────────────────────────────────────────
 # CONFIG
 # ─────────────────────────────────────────────
-COLLECTION_NAME = "LoewsCompany"
-VECTOR_TOP_K    = 6
-MODEL           = "gpt-4.1-mini"
+MODEL            = "gpt-4.1-mini"
+COLLECTION_NAME  = "LoewsCompany"      # must match what chunker.py wrote
+EMBED_MODEL_NAME = "all-MiniLM-L6-v2"  # must match what chunker.py used
+VECTOR_TOP_K     = 6                   # how many passages to retrieve on fallback
 
 # ─────────────────────────────────────────────
 # CLIENTS  (module-level so they are reused across calls)
 # ─────────────────────────────────────────────
 client_oai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+# Vector clients are lazily initialised (only loaded when the graph returns empty),
+# so a graph-only query never pays the SentenceTransformer model-load cost.
+_embed_model:  SentenceTransformer | None = None
+_qdrant_client: QdrantClient       | None = None
+
+
+def _ensure_vector_clients() -> None:
+    """Lazy-load the embedding model + Qdrant client on first vector-fallback use."""
+    global _embed_model, _qdrant_client
+    if _embed_model is None:
+        _embed_model = SentenceTransformer(EMBED_MODEL_NAME)
+    if _qdrant_client is None:
+        _qdrant_client = qdrant_client()
 
 
 def connect_neo4j() -> GraphDatabase.driver:
@@ -30,6 +47,14 @@ def connect_neo4j() -> GraphDatabase.driver:
     )
     driver.verify_connectivity()
     return driver
+
+
+def qdrant_client() -> QdrantClient:
+    """Single Qdrant connection factory used by chunker, query1 and test_chunks."""
+    return QdrantClient(
+        host=os.getenv("QDRANT_HOST", "localhost"),
+        port=int(os.getenv("QDRANT_PORT", 6333)),
+    )
 
 
 def fetch_entity_catalog(driver) -> str:
@@ -67,26 +92,105 @@ def fetch_entity_catalog(driver) -> str:
 # ─────────────────────────────────────────────
 GRAPH_SCHEMA = """
 Node labels and their meaning:
-  Parent          — the filing company (e.g. "Loews Corporation")
-  Subsidiary      — companies owned by the Parent (e.g. "CNA Financial Corporation")
-  Geography       — physical locations (e.g. "United States", "Illinois")
-  BusinessSegment — GAAP reporting segments (e.g. "CNA Financial", "Corporate")
+  Parent          — the filing company (the entity that issued the 10-K)
+  Subsidiary      — companies owned by the Parent
+  Geography       — physical locations: countries, states/provinces, or cities
+  BusinessSegment — GAAP reportable operating segments disclosed by the Parent
   FinancialItem   — enriched financial values whose name encodes both the metric label
                     and the raw value. Format: "Metric Label: $value"
                     Examples: "Net Income: $894", "Total Revenues: $14,931", "Net Income: -$175"
+  Person          — a named individual disclosed as a board member, director, or
+                    executive officer of the Parent or a Subsidiary. The node's `name`
+                    is the personal name as it appears in the document.
   IncomeStatement — income statement node for a fiscal year (e.g. "IncomeStatement_FY2019")
   BalanceSheet    — balance sheet node for a fiscal year (e.g. "BalanceSheet_FY2019")
   CashFlow        — cash flow statement node for a fiscal year (e.g. "CashFlow_FY2019")
 
 All nodes share the :Entity label and have a `name` property.
 
+CRITICAL — statement-node line items live as PROPERTIES on the node:
+  IncomeStatement / BalanceSheet / CashFlow nodes carry their line items as Cypher
+  properties (snake_case keys) on the node itself — NOT as separate FinancialItem nodes.
+  These are the authoritative source for CONSOLIDATED, COMPANY-WIDE figures
+  (the filing company's total revenue, net income, total assets, etc.).
+
+  Two book-keeping property keys are always present:
+    fiscal_year, unit
+  The remaining property keys are GAAP-standard line items in snake_case, matching what
+  the 10-K itself reports. You do not need an exhaustive list — generic GAAP names
+  derived from the question (net_income, total_revenues, total_assets, interest,
+  cash_from_operations, income_tax_expense, comprehensive_income_loss, etc.) will work.
+
+  Pattern — fetch ALL line items for one year (use when the question is broad or you
+  are not sure which specific property key is present):
+    MATCH (p:Parent)-[:INCOME_STATEMENT]->(s:IncomeStatement)
+    WHERE s.fiscal_year = '<year>'
+    RETURN s.name, properties(s) AS line_items
+    LIMIT 5
+
+  Pattern — fetch named metrics across years (use when the question names specific
+  metrics — derive the snake_case key from the metric):
+    MATCH (p:Parent)-[:INCOME_STATEMENT]->(s:IncomeStatement)
+    RETURN s.name, s.fiscal_year, s.<metric_key_1>, s.<metric_key_2>, s.unit
+    LIMIT 60
+
+  Same patterns apply to BalanceSheet (relationship [:BALANCE_SHEET]) and CashFlow
+  (relationship [:CASH_FLOW]). Never hardcode the filing company's name in the MATCH —
+  the (p:Parent) label uniquely identifies it.
+
+  CRITICAL — statement-node property keys may include per-entity prefixed variants:
+  A single statement node can hold BOTH a consolidated metric (e.g. `net_income`) AND
+  per-subsidiary/segment versions of the same metric prefixed with the entity's
+  snake_case name (e.g. `<entity>_net_income`,
+  `<entity>_net_income_attributable_to_<parent>`). When the question names a SPECIFIC
+  subsidiary or segment, you MUST prefer the prefixed key over the generic one,
+  otherwise the consolidated figure will be returned as if it were the entity's.
+
+  Strategy when the question names a specific entity:
+    1. Always FIRST try the GENERATED-edge path (per-entity metrics are normally stored
+       there as (Subsidiary|BusinessSegment)-[:GENERATED]->(FinancialItem)).
+    2. For the statement-node query, you MUST use `RETURN properties(s) AS line_items`
+       — NEVER `RETURN s.<short_metric_key>`. Reason: the generic key holds the
+       CONSOLIDATED figure, not the entity's, so returning it would mislabel the
+       consolidated total as the entity's value. The line_items dict lets the synthesis
+       layer pick the correctly-prefixed key (e.g. `<entity>_net_income`) by inspection.
+
+       CORRECT for an entity-specific question:
+         MATCH (p:Parent)-[:INCOME_STATEMENT]->(s:IncomeStatement {{fiscal_year: '<year>'}})
+         RETURN s.name, s.fiscal_year, properties(s) AS line_items
+         LIMIT 5
+       WRONG for an entity-specific question (returns consolidated, mislabelled):
+         RETURN s.name, s.net_income
+
+  When the question is about the consolidated Parent (no specific subsidiary named),
+  the generic key (e.g. `s.net_income`, `s.total_revenues`) IS the right one and
+  preferred over `properties(s)` for compactness.
+
 Relationship types (read-only):
   (Parent)-[:PARENT_OF]->(Subsidiary)
   (Parent|Subsidiary)-[:OPERATES_IN]->(Geography)
   (Subsidiary|BusinessSegment)-[:GENERATED]->(FinancialItem)
+  (Person)-[:BOARD_MEMBER_OF]->(Parent|Subsidiary)
   (Parent)-[:INCOME_STATEMENT]->(IncomeStatement)
   (Parent)-[:BALANCE_SHEET]->(BalanceSheet)
   (Parent)-[:CASH_FLOW]->(CashFlow)
+
+CRITICAL — BOARD_MEMBER_OF edge properties:
+  r.property    = the person's role at the company, verbatim from the document.
+                  Examples: "Co-Chairman of the Board",
+                            "President and Chief Executive Officer",
+                            "Senior Vice President and Chief Financial Officer", "Director".
+  r.page_number = source page in the document. Use this for citations.
+
+  Always RETURN p.name, r.property, r.page_number together for governance edges.
+
+  To find all people on a company's board / leadership:
+    MATCH (p:Person)-[r:BOARD_MEMBER_OF]->(c:Parent {{name: '<company>'}})
+    RETURN p.name, r.property, r.page_number
+    LIMIT 60
+  To find the role of a specific person:
+    MATCH (p:Person {{name: '<person name>'}})-[r:BOARD_MEMBER_OF]->(c)
+    RETURN c.name, r.property, r.page_number
 
 CRITICAL — financial relationship properties:
   r.property  = fiscal year only, e.g. "2019", "2018". Never a metric name.
@@ -141,6 +245,21 @@ Rules:
     one matching (s:Subsidiary)-[:GENERATED]->(f:FinancialItem)
     one matching (s:BusinessSegment)-[:GENERATED]->(f:FinancialItem)
   Never query only Subsidiary or only BusinessSegment — always both.
+- CRITICAL — consolidated company-wide figures live on statement nodes, not GENERATED edges:
+  If the question asks about a CONSOLIDATED, COMPANY-WIDE, or TOTAL figure for the filing
+  Parent (total/consolidated revenue, net income, total assets, cash flow from operations,
+  etc.), ALSO generate a query that reads the IncomeStatement / BalanceSheet / CashFlow
+  node properties — IN ADDITION to any GENERATED-path queries. Without it the consolidated
+  total is silently missed.
+    Pattern (do NOT include a Parent name filter — :Parent already identifies it):
+      MATCH (p:Parent)-[:INCOME_STATEMENT]->(s:IncomeStatement {{fiscal_year: '<year>'}})
+      RETURN s.name, s.fiscal_year, s.<metric_key>, s.unit
+      LIMIT 5
+  Pick the relationship and statement label that matches the metric class:
+    income-statement metrics → [:INCOME_STATEMENT] → IncomeStatement
+    balance-sheet metrics    → [:BALANCE_SHEET]    → BalanceSheet
+    cash-flow metrics        → [:CASH_FLOW]        → CashFlow
+  For broad "what's in this statement" questions, RETURN properties(s) AS line_items.
 - For revenue/income metric queries, generate queries filtering f.name CONTAINS 'Revenue'
   broadly. Also try f.name CONTAINS 'Total Revenues' as a second query for aggregate totals.
 - For geographic aggregation questions (most locations, most countries, etc.):
@@ -153,6 +272,13 @@ Rules:
     one matching (p:Parent)-[:PARENT_OF]->(s:Subsidiary {{name: 'X'}})
     one matching (p:Subsidiary)-[:PARENT_OF]->(s:Subsidiary {{name: 'X'}})
   Never query only Parent as the owner — always check both.
+- For governance / leadership questions ("who is on the board", "who is the CEO",
+  "who are the directors of X", "who serves as chairman"):
+  Match the Person -> Parent|Subsidiary BOARD_MEMBER_OF edge. Always RETURN p.name,
+  r.property (the role string), AND r.page_number — the page number is required so the
+  synthesizer can cite the source page for each governance fact.
+  When the question names a specific company, filter on the target node's name.
+  When the question is about the filing company, the target is :Parent.
 - For reverse geographic lookup questions ("which entities operate in [place]"):
   Generate TWO queries — one matching the exact place name (e.g. g.name = 'United States')
   and one matching geography nodes that CONTAIN the place name
@@ -183,6 +309,35 @@ Guidelines:
   Do not guess, round, or derive values — only report what the records contain.
 - FinancialItem node names encode both the metric and its value: "Net Income: $894" means
   the metric is Net Income and the value is $894. The year comes from r.property.
+- Statement-node records (IncomeStatement / BalanceSheet / CashFlow) deliver data differently:
+  line items are KEY:VALUE pairs on the node itself, returned either as individual
+  properties (e.g. fields prefixed with `s.`) or as a "line_items" dict (when the query
+  used RETURN properties(s)). Read the dict directly, formatting each entry as
+  "Metric Name: value <unit>" and converting snake_case keys to readable labels.
+
+- CRITICAL — disambiguating consolidated vs per-entity statement-node keys:
+  A statement node can hold BOTH a generic key (e.g. `net_income`, `total_revenues`)
+  AND per-entity prefixed variants of the same metric whose snake_case starts with
+  the subsidiary's or segment's name (e.g. `<entity_snake_case>_net_income`,
+  `<entity_snake_case>_<metric>_attributable_to_<parent_snake_case>`).
+    • If the question asks about a SPECIFIC subsidiary or segment, look in the
+      line_items dict for a key whose snake_case starts with that entity's name
+      and prefer it over the generic metric key. Returning the generic key for an
+      entity-specific question means returning the CONSOLIDATED total mislabelled —
+      a factual error.
+    • If the question is about the consolidated filing company (no specific entity
+      named), the generic key IS correct.
+    • If the only matching record comes from a GENERATED edge and not from a
+      statement-node prefixed key, the GENERATED edge is authoritative.
+
+- When BOTH the statement node and a GENERATED edge return a value for the same
+  CONSOLIDATED metric, the statement node is the official 10-K figure; the GENERATED
+  edge may be a per-segment contributor.
+
+- KEY SELECTION when a line_items dict has many candidates:
+  Prefer the LONGEST matching key — the entity-prefixed full name beats the short
+  generic key. Example: when asked about "<entity>'s revenue", prefer
+  `<entity_snake_case>_revenue: <value>` over the generic `revenues: <other_value>`.
 - Geography nodes may contain cities, states, provinces, or countries mixed together.
   When answering geographic questions, list the locations as returned and qualify them
   appropriately (e.g. "cities and countries") — never present a raw location count
@@ -191,12 +346,29 @@ Guidelines:
 - Use bullet points or sections when the answer is multi-part
 - When multiple records describe the same metric but with slightly different values
   (e.g. $1,051M on one page and $1,059M on another), do not list them as separate facts.
-  Instead, prefer the record whose node name contains 'Total' or is the most aggregate,
-  and note the source page. If values differ materially, state the range honestly.
+  Instead, prefer the record whose node name contains 'Total' or is the most aggregate.
+  If values differ materially, state the range honestly.
 - Only say data is missing if the graph context is literally empty
-- After every factual claim cite the source as (Graph, p.<page_number>)
-  using the page_number field from the graph record. If page_number is absent write (Graph)
-- Be concise but complete
+
+ANSWER STYLE — be terse and factual:
+- State each fact directly. Do NOT add interpretation, market commentary, business
+  reasoning, or causal explanation that is not literally present in the retrieved records.
+- Format: "<entity> reported <metric> of <value> in <year> (citation)."
+- One sentence per fact. No editorial framing.
+- If the records do not contain a "why" or "how", do NOT speculate. Say the records
+  do not address that aspect.
+
+CITATION RULES — only cite what is literally in the context:
+- For GENERATED-edge records (where r.page_number is present):
+  cite as (Graph, p.<N>) using the exact page_number value from the record. Never invent.
+- For statement-node records (properties on IncomeStatement / BalanceSheet / CashFlow):
+  cite as (Graph, <s.name>) — read the actual node name from the s.name field
+  (typical format: <StatementType>_FY<year>). DO NOT invent a page number for these;
+  these nodes aggregate data from multiple source pages of the document.
+- For vector passages (when the context comes from raw document chunks):
+  cite as (Source, p.<N>) using the page number from the passage header. Never invent.
+- If no page number or node name is available, omit the citation rather than fabricate.
+- NEVER cite a page number that does not literally appear in the retrieved context.
 """
 
 
@@ -230,22 +402,41 @@ def _generate_queries(question: str, entity_catalog: str = "") -> list[str]:
 # STEP 2a — GRAPH FETCH
 # ══════════════════════════════════════════════════════
 def _run_cypher(cypher: str, driver) -> list[str]:
-    """Execute a single Cypher query and return serialized result lines."""
+    """Execute a single Cypher query and return serialized result lines.
+
+    Dict-valued columns (e.g. `properties(s) AS line_items` from a statement-node query)
+    are EXPANDED into one key:value line each, so the synthesis layer can read each
+    line item directly instead of having to parse a giant inline Python-repr string.
+    """
     with driver.session() as session:
         records = [dict(r) for r in session.run(cypher)]
 
-    lines = []
+    lines: list[str] = []
     for rec in records:
-        parts = []
+        scalar_parts: list[str] = []
+        dict_blocks:  list[str] = []
         for k, v in rec.items():
             if v is None:
                 continue
-            # Neo4j Node objects expose items() like a dict
-            if hasattr(v, "items"):
+            # Neo4j Node objects expose .labels and .items() — treat as a node, get name
+            if hasattr(v, "labels"):
                 v = dict(v).get("name", str(v))
-            parts.append(f"{k}: {v}")
-        if parts:
-            lines.append(" | ".join(parts))
+                scalar_parts.append(f"{k}: {v}")
+                continue
+            # Plain dict (typically from properties(s) AS line_items) — expand each entry
+            if isinstance(v, dict):
+                for kk, vv in v.items():
+                    if vv is None or str(vv).strip() == "":
+                        continue
+                    dict_blocks.append(f"  {kk}: {vv}")
+                continue
+            scalar_parts.append(f"{k}: {v}")
+        if scalar_parts or dict_blocks:
+            header = " | ".join(scalar_parts) if scalar_parts else ""
+            if dict_blocks:
+                lines.append(header + ("\n" if header else "") + "\n".join(dict_blocks))
+            else:
+                lines.append(header)
     return lines
 
 
@@ -283,55 +474,88 @@ def _graph_fetch(question: str, driver, entity_catalog: str = "") -> str:
             deduped.append(line)
 
     print(f"  [Graph]  {len(deduped)} unique record(s) total")
-    return "\n".join(deduped)
+    # Records are joined with a blank line so callers (synthesis, eval) can split
+    # on "\n\n" to recover individual record boundaries. Without this, multi-line
+    # statement records (header + indented line items) get torn apart when split
+    # on single "\n", which destroys evidence cohesion for the RAGAS judge.
+    return "\n\n".join(deduped)
 
 
 # ══════════════════════════════════════════════════════
-# STEP 2b — VECTOR FETCH
+# STEP 2c — VECTOR FALLBACK FETCH
 # ══════════════════════════════════════════════════════
 def _vector_fetch(question: str) -> str:
-    """Embed the question with the same model used at ingestion, search Qdrant."""
-    vector = embed_model.encode(question).tolist()
+    """
+    Fallback retrieval — embed the question with the same model used at ingestion
+    and search Qdrant for the top-K most relevant chunks. Returns a plain-text
+    block of passages with `[section page=N score=X]` headers.
 
-    results = client_qdrant.query_points(
-        collection_name=COLLECTION_NAME,
-        query=vector,
-        limit=VECTOR_TOP_K,
-        with_payload=True
-    )
+    Used only when the graph returns no records, so a typical structured question
+    never pays the embedding or Qdrant cost.
+    """
+    _ensure_vector_clients()
+    vector = _embed_model.encode(question).tolist()
+
+    try:
+        results = _qdrant_client.query_points(
+            collection_name=COLLECTION_NAME,
+            query=vector,
+            limit=VECTOR_TOP_K,
+            with_payload=True,
+        )
+    except Exception as e:
+        print(f"  [Vector] Qdrant query failed: {e}")
+        return ""
+
     hits = results.points
-
     if not hits:
         print("  [Vector] No passages found")
         return ""
 
     passages = []
     for hit in hits:
-        section  = hit.payload.get("section",     "unknown section")
-        page     = hit.payload.get("page_number", "?")
-        text     = hit.payload.get("text",        "").strip()
-        score    = round(hit.score, 3)
+        section = hit.payload.get("section",     "unknown section")
+        page    = hit.payload.get("page_number", "?")
+        text    = hit.payload.get("text",        "").strip()
+        score   = round(hit.score, 3)
         passages.append(f"[{section}  page={page}  score={score}]\n{text}")
 
-    print(f"  [Vector] {len(passages)} passage(s) retrieved")
+    print(f"  [Vector] {len(passages)} passage(s) retrieved (fallback)")
     return "\n\n---\n\n".join(passages)
 
 
 # ══════════════════════════════════════════════════════
 # STEP 3 — SYNTHESIS
 # ══════════════════════════════════════════════════════
-def _synthesize(question: str, graph_ctx: str) -> str:
-    """Generate a natural-language answer from graph context only."""
-    context = graph_ctx if graph_ctx else "No relevant data was found in the knowledge graph."
+def _synthesize(question: str, graph_ctx: str, vector_ctx: str = "") -> str:
+    """
+    Generate a natural-language answer. If `vector_ctx` is non-empty, the synthesis
+    operates on raw document passages and cites pages from passage headers
+    (`(Source, p.<N>)`) instead of from graph records.
+    """
+    if vector_ctx:
+        context = vector_ctx
+        user_msg = (
+            f"Question: {question}\n\n"
+            "No facts were found in the knowledge graph for this question. "
+            "Below are the most relevant passages retrieved from the source document. "
+            "Answer ONLY from these passages — do not invent figures. Cite the page "
+            "number from each passage's header as (Source, p.<N>). If the passages do "
+            "not contain a clear answer, say so honestly.\n\n"
+            f"Passages:\n{context}"
+        )
+    else:
+        context = graph_ctx if graph_ctx else "No relevant data was found in the knowledge graph."
+        user_msg = f"Question: {question}\n\nGraph data:\n{context}"
 
     response = client_oai.chat.completions.create(
         model=MODEL,
         messages=[
             {"role": "system", "content": SYNTHESIS_SYSTEM},
-            {"role": "user",   "content": f"Question: {question}\n\nGraph data:\n{context}"}
+            {"role": "user",   "content": user_msg},
         ],
         temperature=0,
-        max_tokens=1500
+        max_tokens=1500,
     )
     return response.choices[0].message.content.strip()
 
@@ -341,8 +565,12 @@ def _synthesize(question: str, graph_ctx: str) -> str:
 # ══════════════════════════════════════════════════════
 def answer(question: str, driver, entity_catalog: str = "") -> str:
     """
-    Full pipeline: parallel graph + vector fetch → synthesis → clean answer.
-    Returns the answer as a string.
+    Hybrid retrieval pipeline:
+      1. Try the graph first (Cypher generation + execution).
+      2. If the graph returns no records, fall back to vector retrieval from Qdrant.
+      3. Synthesise an answer from whichever context is available.
+
+    Vector is a true fallback — it never runs when the graph already answered.
     """
     print(f"\n{'═' * 60}")
     print(f"Question: {question}")
@@ -350,8 +578,13 @@ def answer(question: str, driver, entity_catalog: str = "") -> str:
 
     graph_ctx = _graph_fetch(question, driver, entity_catalog)
 
+    vector_ctx = ""
+    if not graph_ctx:
+        print("  [Fallback] Graph returned no records — querying vector store...")
+        vector_ctx = _vector_fetch(question)
+
     print(f"{'─' * 60}")
-    return _synthesize(question, graph_ctx)
+    return _synthesize(question, graph_ctx, vector_ctx)
 
 
 # ══════════════════════════════════════════════════════

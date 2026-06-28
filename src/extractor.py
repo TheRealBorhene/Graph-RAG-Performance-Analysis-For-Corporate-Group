@@ -4,9 +4,10 @@ import time
 from openai import OpenAI
 
 from checkpoint import load_checkpoint, save_checkpoint, delete_checkpoint, is_already_processed
-from logger import init_log, log_chunk, log_skipped, log_error, log_summary, warn, info, drop, ok, wait
+from logger import init_log, log_chunk, log_skipped, log_error, log_summary, warn, info, ok, wait
 from agents import MODEL, run_pipeline
-from guards import apply_entity_guards, validate_relationships, FINANCIAL_VALUE_PATTERN, PAREN_NEGATIVE_PATTERN, _normalize_sub
+from guards import apply_entity_guards, _normalize_sub, _segment_canonical
+from relationship_validator import validate_relationships
 
 # ─────────────────────────────────────────────
 # RATE LIMIT CONFIG
@@ -100,8 +101,7 @@ def merge_graph(graph: dict) -> dict:
             prop_groups.setdefault(group_key, []).append(rel)
 
     dropped_format_dups = 0
-    survivors: set[int] = set()
-    dup_ids:   set[int] = set()
+    dup_ids: set[int] = set()
     for group in prop_groups.values():
         if len(group) == 1:
             continue
@@ -123,6 +123,110 @@ def merge_graph(graph: dict) -> dict:
           + (f"  ({dropped_format_dups} format-duplicate(s) removed)" if dropped_format_dups else ""))
 
     return {"entities": unique_entities, "relationships": unique_relationships}
+
+
+# ─────────────────────────────────────────────
+# GLOBAL SEGMENT NAME CANONICALISATION
+# ─────────────────────────────────────────────
+
+def canonicalize_segment_names(graph: dict) -> dict:
+    """
+    Global, post-merge canonicalisation of Business Segment node names.
+
+    The per-chunk canonicalisation in guards.apply_entity_guards() runs with only the
+    subsidiaries confirmed *so far*, so a segment name extracted before its owning
+    subsidiary was seen can survive in a non-canonical form (e.g. "Boardwalk Pipeline
+    Partners" in an early chunk vs "Boardwalk Pipeline" in a later one). After merge,
+    the full subsidiary list is finally known, so we re-run the SAME canonicalisation
+    once, globally — reusing the existing _normalize_sub / _segment_canonical helpers.
+
+    Steps:
+      1. Map each Business Segment name to the canonical short form of the subsidiary
+         it matches.
+      2. Apply renames to Business Segment *nodes*. Re-point relationship endpoints
+         ONLY for segment-only names — a name shared with a Subsidiary (e.g.
+         "CNA Financial Corporation") keeps its edges on the subsidiary, so the
+         subsidiary's metrics are never moved.
+      3. Deduplicate, then drop Business Segment nodes left with no relationships —
+         these are redundant duplicates of a subsidiary that carry no extracted fact.
+    """
+    entities      = graph["entities"]
+    relationships = graph["relationships"]
+
+    sub_names = {e["name"] for e in entities if e["type"] == "Subsidiary"}
+    sub_norms = {s: _normalize_sub(s) for s in sub_names}
+
+    # 1. Build the segment rename map (Business Segment entities only)
+    rename: dict[str, str] = {}
+    for ent in entities:
+        if ent["type"] != "Business Segment":
+            continue
+        seg_norm = _normalize_sub(ent["name"])
+        if not seg_norm:
+            continue
+        matched_sub = next(
+            (s for s, n in sub_norms.items()
+             if n and (seg_norm in n or n in seg_norm)),
+            None,
+        )
+        if matched_sub:
+            canonical = _segment_canonical(matched_sub)
+            if canonical and canonical != ent["name"]:
+                rename[ent["name"]] = canonical
+
+    # 2. Apply renames to Business Segment nodes…
+    for ent in entities:
+        if ent["type"] == "Business Segment" and ent["name"] in rename:
+            ent["name"] = rename[ent["name"]]
+    # …and to relationship endpoints, but ONLY for segment-only names. A name that is
+    # also a Subsidiary (collision) keeps its edges so the subsidiary retains its metrics.
+    seg_only = {old for old in rename if old not in sub_names}
+    for rel in relationships:
+        if rel["source"] in seg_only:
+            rel["source"] = rename[rel["source"]]
+        if rel["target"] in seg_only:
+            rel["target"] = rename[rel["target"]]
+
+    # 3a. Deduplicate entities by (name, type) — merge statement props if any collide
+    seen_e: dict[tuple, dict] = {}
+    for ent in entities:
+        key = (ent["name"], ent["type"])
+        if key not in seen_e:
+            seen_e[key] = ent
+        elif ent.get("properties"):
+            seen_e[key].setdefault("properties", {}).update(ent["properties"])
+    merged_entities = list(seen_e.values())
+
+    # 3b. Deduplicate relationships by (source, target, type)
+    seen_r: dict[tuple, dict] = {}
+    for rel in relationships:
+        key = (rel["source"], rel["target"], rel["type"])
+        if key not in seen_r:
+            seen_r[key] = rel
+        elif seen_r[key].get("property") is None and rel.get("property") is not None:
+            seen_r[key]["property"] = rel["property"]
+    merged_rels = list(seen_r.values())
+
+    # 3c. Drop Business Segment nodes left with no relationships (redundant duplicates)
+    used = {r["source"] for r in merged_rels} | {r["target"] for r in merged_rels}
+    before = len(merged_entities)
+    final_entities = [
+        e for e in merged_entities
+        if e["type"] != "Business Segment" or e["name"] in used
+    ]
+    dropped_orphans = before - len(final_entities)
+
+    print("Canonicalisation (Business Segments):")
+    if rename:
+        for old, new in rename.items():
+            print(f"  '{old}' -> '{new}'")
+    else:
+        print("  no segment names needed collapsing")
+    print(f"  Entities      : {len(entities)} -> {len(final_entities)}"
+          + (f"  ({dropped_orphans} orphan segment node(s) dropped)" if dropped_orphans else ""))
+    print(f"  Relationships : {len(relationships)} -> {len(merged_rels)}")
+
+    return {"entities": final_entities, "relationships": merged_rels}
 
 
 # ─────────────────────────────────────────────
@@ -268,17 +372,19 @@ def extract_graph(chunks: list[dict]) -> dict:
         chunk_entities      = []
         chunk_relationships = []
 
+        chunk_trace: dict = {}
         try:
             confirmed_subs = {e["name"] for e in all_entities if e["type"] == "Subsidiary"}
             chunk_entities, chunk_relationships = run_pipeline(
                 current_text, filing_company, client,
                 lambda ents: apply_entity_guards(ents, current_text, filing_company, confirmed_subs),
                 run_timestamp, chunk_id,
-                known_entities=all_entities
+                known_entities=all_entities,
+                trace=chunk_trace
             )
 
             if not chunk_entities:
-                log_chunk(run_timestamp, chunk_id, [], [], len(all_entities), len(all_relations))
+                log_chunk(run_timestamp, chunk_id, [], [], len(all_entities), len(all_relations), trace=chunk_trace)
                 last_chunk_id = chunk_id
                 save_checkpoint(last_chunk_id, all_entities, all_relations)
                 if pair_idx < total_pairs:
@@ -312,7 +418,10 @@ def extract_graph(chunks: list[dict]) -> dict:
         print(f"  Total so far: {len(all_entities)} entities, {len(all_relations)} relationships")
         print(f"  -----------------------------------------")
 
-        log_chunk(run_timestamp, chunk_id, chunk_entities, chunk_relationships, len(all_entities), len(all_relations))
+        # Record the post-validation relationships (what actually reaches the graph) so the
+        # log shows both the raw Agent 3 output (trace["relationships"]) and the final set.
+        chunk_trace["final_relationships"] = chunk_relationships
+        log_chunk(run_timestamp, chunk_id, chunk_entities, chunk_relationships, len(all_entities), len(all_relations), trace=chunk_trace)
         last_chunk_id = chunk_id
         save_checkpoint(last_chunk_id, all_entities, all_relations)
         ok(f"Checkpoint saved at page {page_number}")

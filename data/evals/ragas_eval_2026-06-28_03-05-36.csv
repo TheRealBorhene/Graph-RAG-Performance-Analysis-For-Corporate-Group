@@ -1,0 +1,75 @@
+timestamp,question,source,faithfulness,answer_relevancy,answer_correctness,answer,ground_truth
+2026-06-28_03-05-36,What subsidiaries does Loews Corporation own?,graph,0.0,0.9928144032650151,0.6074984609705909,"Loews Corporation owns the following subsidiaries: 
+
+- BPHC
+- Altium Packaging LLC
+- Loews Hotels Holding Corporation
+- Boardwalk Pipeline Partners, LP
+- Diamond Offshore Drilling, Inc.
+- CNA Financial Corporation","Loews Corporation owns six subsidiaries: CNA Financial Corporation, Diamond Offshore Drilling Inc., Boardwalk Pipeline Partners LP, Loews Hotels Holding Corporation, Altium Packaging LLC, and BPHC (Boardwalk Pipelines Holding Corp)."
+2026-06-28_03-05-36,How much net income did CNA Financial Corporation generate in 2019?,graph,1.0,0.7992445350389326,0.9931702797195372,"CNA Financial Corporation generated net income attributable to Loews Corporation of $894 million in 2019 (Graph, IncomeStatement_FY2019).",CNA Financial Corporation generated net income of $894 million attributable to Loews Corporation in fiscal year 2019.
+2026-06-28_03-05-36,What was CNA Financial Corporation's net income in 2018?,graph,1.0,0.7597181775336467,0.9890209607694649,"CNA Financial Corporation reported net income attributable to Loews Corporation of $726 million in 2018 (Graph, IncomeStatement_FY2018).",CNA Financial Corporation generated net income of $726 million attributable to Loews Corporation in fiscal year 2018.
+2026-06-28_03-05-36,Where does Boardwalk Pipeline Partners operate?,graph,1.0,0.9601167176926668,0.8808526822039776,"Boardwalk Pipeline Partners operates in the following locations: Louisiana, Ohio, Indiana, Illinois, Tennessee, Arkansas, Oklahoma, Kentucky, and Texas within the United States (U.S.).","Boardwalk Pipeline Partners operates pipelines and storage facilities across nine U.S. states: Oklahoma, Arkansas, Tennessee, Kentucky, Illinois, Indiana, Ohio, Louisiana, and Texas."
+2026-06-28_03-05-36,What was the contract backlog of Diamond Offshore in 2020?,vector,1.0,0.9189398493071398,0.6649851535283912,"Diamond Offshore reported a contract drilling backlog of $1.6 billion as of January 1, 2020. The backlog by year as of that date was $802 million in 2020, $486 million in 2021, and an aggregate of $323 million in 2022 through 2023 (Source, p.54).",Diamond Offshore Drilling reported a contract backlog of $1.6 billion at the start of fiscal year 2020.
+2026-06-28_03-05-36,Which Loews subsidiaries reported a net loss in 2019?,graph,0.5,1.0000000000000002,0.5715324792713039,"In 2019, the Loews subsidiaries that reported a net loss were:
+
+- Diamond Offshore Drilling, Inc. with a net loss of $175 million (Graph, p.49).
+- Loews Hotels Holding Corporation with a net loss of $31 million (Graph, p.49).
+- Loews Hotels reported a net loss attributable to Loews Corporation of $31 million (Graph, p.59).",Two Loews subsidiaries reported a net loss in 2019: Diamond Offshore Drilling (-$175 million) and Loews Hotels Holding Corporation (-$31 million).
+2026-06-28_03-05-36,Who is the parent company of Altium Packaging LLC?,graph,1.0,0.9150797775970773,0.9882232930575809,Altium Packaging LLC is a subsidiary of Loews Corporation.,"Altium Packaging LLC is owned by Loews Corporation, its parent company."
+2026-06-28_03-05-36,What were Diamond Offshore Drilling's contract drilling revenues in 2019?,graph,1.0,0.9999996873038182,0.7349313888585829,"Diamond Offshore Drilling reported contract drilling revenues of $981 million in 2019 (Graph, IncomeStatement_FY2019).","Diamond Offshore Drilling reported contract drilling revenues of approximately $935 million on a standalone basis, or $981 million as reported in the Loews consolidated income statement for fiscal year 2019."
+2026-06-28_03-05-36,What were CNA's insurance premiums in 2019?,graph,0.5,1.0,0.5794567338525884,"CNA's insurance premiums in 2019 were $7,428 million (Graph, IncomeStatement_FY2019).","CNA Financial reported net earned insurance premiums of $7,428 million in fiscal year 2019."
+2026-06-28_03-05-36,What was Diamond Offshore Drilling's net loss in 2018?,graph,1.0,0.8465160262886146,0.6735715664027194,"Diamond Offshore Drilling reported a net loss attributable to Loews Corporation of $112 million in 2018 (Graph, IncomeStatement_FY2018).",Diamond Offshore Drilling reported a net loss of $112 million attributable to Loews Corporation in fiscal year 2018.
+2026-06-28_03-05-36,What was Loews Hotels Holding Corporation's net loss in 2019?,graph,1.0,0.9346047011633699,0.9929597351103583,"Loews Hotels Holding Corporation reported a net loss attributable to Loews Corporation of $31 million in 2019 (Graph, IncomeStatement_FY2019).",Loews Hotels Holding Corporation reported a net loss of $31 million attributable to Loews Corporation in 2019.
+2026-06-28_03-05-36,What was Boardwalk Pipeline Partners' net income in 2019?,graph,1.0,0.8301091399887249,0.9916290866410292,"Boardwalk Pipeline Partners reported net income attributable to Loews Corporation of $209 million in 2019 (Graph, IncomeStatement_FY2019).",Boardwalk Pipeline Partners generated net income of $209 million attributable to Loews Corporation in 2019.
+2026-06-28_03-05-36,What was Altium Packaging LLC's revenue in 2018?,graph,0.0,1.0,0.6134811568657383,"Altium Packaging LLC's revenue in 2018 was $867 million (Graph, p.47).",Altium Packaging LLC reported revenue of approximately $867 million in fiscal year 2018.
+2026-06-28_03-05-36,What were CNA Financial's gross written premiums in 2019?,graph,0.0,0.9999994641137261,0.5363119395351753,"CNA Financial reported gross written premiums of $6,200 million in 2019 (Graph, IncomeStatement_FY2019).","CNA Financial reported gross written premiums of $11,704 million in fiscal year 2019."
+2026-06-28_03-05-36,Where does CNA Financial Corporation operate internationally?,vector,1.0,0.8632200719271763,0.4306841800793175,"CNA Financial Corporation operates internationally with insurance operations conducted in both domestic and foreign jurisdictions. Specifically, CNA is subject to regulatory agency requirements in the following foreign locations:
+
+- United Kingdom (U.K.), regulated by the U.K. Prudential Regulatory Authority and Financial Conduct Authority
+- Canada, regulated by the Office of Superintendent of Financial Institutions
+- Luxembourg, regulated by the Luxembourg insurance regulator Commissariat aux Assurances
+- Bermuda, regulated by the Bermuda Monetary Authority
+
+Additionally, CNA’s European business is handled through its European subsidiary in Luxembourg to address the U.K.'s exit from the European Union and to ensure effective operation throughout the E.U. (Source, p.22; Source, p.4).
+
+CNA’s subsidiaries maintain office space in various countries outside the United States, although specific countries beyond those regulatory jurisdictions are not detailed in the available information (Source, p.6).","CNA Financial Corporation operates internationally in the United Kingdom, Canada, Luxembourg, Bermuda, and through Lloyd's of London."
+2026-06-28_03-05-36,What was Loews Hotels' equity income from joint ventures in 2019?,graph,0.3333333333333333,0.8828434879742176,0.5193394667207707,"Loews Hotels reported equity income of $69 million in 2019 (Graph, IncomeStatement_FY2019).",Loews Hotels Holding Corporation reported equity income from joint ventures of $69 million in fiscal year 2019.
+2026-06-28_03-05-36,Where does Diamond Offshore Drilling operate?,graph,1.0,0.9572178435964118,0.8504532904186339,"Diamond Offshore Drilling operates in the following locations: United States, Houston, Texas, New Iberia, Louisiana, United Kingdom, Aberdeen, Scotland, Australia, Macae, Brazil, Ciudad del Carmen, Mexico, Malaysia, and Singapore.","Diamond Offshore Drilling operates internationally with offshore drilling rigs and offices in the United States, the United Kingdom, Brazil, Mexico, Malaysia, Singapore, and Australia."
+2026-06-28_03-05-36,Where does Loews Hotels Holding Corporation operate?,graph,,0.9348435220772037,0.21014791358975404,"Loews Hotels Holding Corporation operates in the following cities and regions:
+
+- Chicago, Illinois
+- United States (general)
+- San Diego, California
+- Seattle, Washington
+- Montreal, Canada
+- Miami Beach, Florida
+- Minneapolis, Minnesota
+- Philadelphia, Pennsylvania
+- New York
+- Nashville, Tennessee
+- Tucson, Arizona
+- Orlando
+- Arlington, Texas
+- Atlanta, Georgia
+- Toronto
+- Boston, Massachusetts
+- New Orleans, Louisiana
+- San Francisco
+- Santa Monica
+- Kansas City, Missouri
+- St. Louis
+- Coral Gables",Loews Hotels Holding Corporation operates hotels in multiple U.S. cities and in Canada (Montreal and Toronto).
+2026-06-28_03-05-36,Who is the parent company of CNA Financial Corporation?,graph,1.0,0.9999995447064239,0.9664539641141268,Loews Corporation is the parent company of CNA Financial Corporation.,"CNA Financial Corporation is owned by Loews Corporation, its parent company."
+2026-06-28_03-05-36,Who is the parent company of Diamond Offshore Drilling?,graph,1.0,0.9226219603222935,0.9908871626999389,"Diamond Offshore Drilling, Inc. is a subsidiary of Loews Corporation.","Diamond Offshore Drilling is owned by Loews Corporation, its parent company."
+2026-06-28_03-05-36,What were Boardwalk Pipeline Partners' operating revenues in 2019?,graph,1.0,0.9708162748126562,0.7206537825631374,"Boardwalk Pipeline Partners reported operating revenues of $1,300 million in 2019 (Graph, p.0).","Boardwalk Pipeline Partners reported operating revenues of approximately $1,300 million as a standalone segment in fiscal year 2019, with the consolidated income statement reporting $1,266 million for transportation and storage from Boardwalk Pipelines."
+2026-06-28_03-05-36,What were Diamond Offshore Drilling's contract drilling revenues in 2018?,graph,1.0,1.0,0.5423890379884435,"Diamond Offshore Drilling reported contract drilling revenues of $1,083 million in 2018 (Graph, IncomeStatement_FY2018).",Diamond Offshore Drilling reported contract drilling revenues of approximately $939 million in fiscal year 2018.
+2026-06-28_03-05-36,What types of insurance products does CNA Financial offer?,vector,1.0,0.9386687953873861,0.30075538257210144,"CNA Financial offers commercial property and casualty insurance products through its Property & Casualty Operations, which include Specialty, Commercial, and International lines of business (Source, p.49; p.51). Additionally, CNA has Other Insurance Operations that include a long term care business in run-off, certain corporate expenses, and certain property and casualty businesses in run-off such as CNA Re and asbestos and environmental pollution (A&EP) (Source, p.4; p.49; p.72).
+
+Specifically, the long term care insurance policies provide benefits for nursing homes, assisted living facilities, and home health care, subject to various daily and lifetime caps (Source, p.72).
+
+CNA markets its insurance products primarily through independent agents, brokers, and managing general underwriters to a wide variety of customers including small, medium, and large businesses, insurance companies, associations, professionals, and other groups (Source, p.49).
+
+No further detailed breakdown of specific insurance product types beyond these categories is provided in the available passages.","CNA Financial offers commercial property and casualty insurance products, including specialty insurance, surety, and warranty products, and operates through several underwriting business units."
+2026-06-28_03-05-36,What does Altium Packaging LLC produce?,vector,1.0,0.9609548730779465,0.4535495803776458,"Altium Packaging LLC produces rigid plastic packaging solutions (Graph, IncomeStatement_FY2019).","Altium Packaging LLC produces rigid plastic packaging products for consumer goods, food and beverage, and industrial markets, serving North American customers."
+2026-06-28_03-05-36,What were the consolidated total revenues of Loews Corporation in 2019?,graph,0.0,0.9999999999999999,0.6651895089185569,"Loews Corporation reported consolidated total revenues of $1,106 million in 2019 (Graph, IncomeStatement_FY2019).","Loews Corporation reported consolidated total revenues of approximately $14,931 million in fiscal year 2019."

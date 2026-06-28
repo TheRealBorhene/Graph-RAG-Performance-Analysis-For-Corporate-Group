@@ -85,6 +85,36 @@ Business Segment:
   WRONG: "X segment", "X revenue", "X income"
   CORRECT: "X"  (the bare operational name only)
 
+Person:
+  A named individual disclosed as a board member, director, executive officer, or
+  similar governance role for {filing_company} or one of its subsidiaries.
+  Trigger when ALL of the following are true:
+    - The candidate is a full personal name (first + last, e.g. "Jane R. Doe", "John Smith")
+    - A role/title is stated in the same paragraph or adjacent table row that contains
+      ANY of: "Director", "Chairman", "Vice Chairman", "Board", "Chief Executive Officer",
+      "Chief Financial Officer", "President", "Senior Vice President", "Vice President",
+      "General Counsel", "Secretary", "Treasurer", "Chief Investment Officer",
+      "Chief Operating Officer", "Officer"
+    - The role is held at {filing_company} or one of its subsidiaries (not at a peer,
+      vendor, regulator, or external organisation)
+
+  Output the EXACT personal name as it appears in the text — preserve middle initials,
+  suffixes (Jr., Sr., III), and capitalization. Do NOT include the title in the name.
+  Examples (generic — apply to any name):
+    "Mr. John A. Smith"                        → "John A. Smith"
+    "Jane R. Doe, our Chief Financial Officer" → "Jane R. Doe"
+    "Robert K. Lee III, Director"              → "Robert K. Lee III"
+
+  Discard:
+    - References to people in third-party contexts (analysts, regulators, journalists,
+      authors of cited works, plaintiffs, defendants)
+    - Generic role mentions with no personal name attached
+      ("our Chief Executive Officer" with no name → discard)
+    - Historical references with no current role
+      ("the late John Smith, who served as..." → discard)
+    - Mentions in litigation, lawsuit, or court-filing contexts
+    - People disclosed only as employees of competitors, peers, or unrelated organisations
+
 Financial Item:
   A specific numeric value from a financial reporting context — must contain a digit.
   If the candidate contains no digit whatsoever, it is a label — discard it immediately.

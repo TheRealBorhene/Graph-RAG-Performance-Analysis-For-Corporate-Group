@@ -1,0 +1,57 @@
+timestamp,question,source,faithfulness,answer_relevancy,answer_correctness,answer,ground_truth
+2026-06-27_22-31-13,What subsidiaries does Loews Corporation own?,graph,0.0,0.9928144032650151,0.6074953900659624,"Loews Corporation owns the following subsidiaries: 
+
+- BPHC
+- Altium Packaging LLC
+- Loews Hotels Holding Corporation
+- Boardwalk Pipeline Partners, LP
+- Diamond Offshore Drilling, Inc.
+- CNA Financial Corporation","Loews Corporation owns six subsidiaries: CNA Financial Corporation, Diamond Offshore Drilling Inc., Boardwalk Pipeline Partners LP, Loews Hotels Holding Corporation, Altium Packaging LLC, and BPHC (Boardwalk Pipelines Holding Corp)."
+2026-06-27_22-31-13,How much net income did CNA Financial Corporation generate in 2019?,graph,1.0,0.7992445350389326,0.7431733151390888,"CNA Financial Corporation generated net income attributable to Loews Corporation of $894 million in 2019 (Graph, IncomeStatement_FY2019).",CNA Financial Corporation generated net income of $894 million attributable to Loews Corporation in fiscal year 2019.
+2026-06-27_22-31-13,What was Diamond Offshore Drilling's net income in 2019?,graph,0.5,0.8324347035959878,0.5413408498537646,"Diamond Offshore Drilling reported net income attributable to Loews Corporation of a loss of $175 million in 2019 (Graph, IncomeStatement_FY2019).",Diamond Offshore Drilling reported a net loss of $175 million attributable to Loews Corporation in 2019.
+2026-06-27_22-31-13,What was Boardwalk Pipeline Partners' net income in 2019?,graph,1.0,0.8301179108708098,0.9916248784018376,"Boardwalk Pipeline Partners reported net income attributable to Loews Corporation of $209 million in 2019 (Graph, IncomeStatement_FY2019).",Boardwalk Pipeline Partners generated net income of $209 million attributable to Loews Corporation in 2019.
+2026-06-27_22-31-13,What was Altium Packaging's revenue in 2019?,graph,0.0,0.9842578829279963,0.2338308079553533,"Altium Packaging reported revenues of $804 million in 2019 (Graph, IncomeStatement_FY2019).",Altium Packaging LLC reported revenue of approximately $932 million in fiscal year 2019.
+2026-06-27_22-31-13,Where does Boardwalk Pipeline Partners operate?,graph,1.0,0.9601220155167908,0.8808526822039776,"Boardwalk Pipeline Partners operates in the following locations: Louisiana, Ohio, Indiana, Illinois, Tennessee, Arkansas, Oklahoma, Kentucky, and Texas within the United States (U.S.).","Boardwalk Pipeline Partners operates pipelines and storage facilities across nine U.S. states: Oklahoma, Arkansas, Tennessee, Kentucky, Illinois, Indiana, Ohio, Louisiana, and Texas."
+2026-06-27_22-31-13,What was the contract backlog of Diamond Offshore in 2020?,vector,1.0,0.9189202448698564,0.5346371256647597,"Diamond Offshore reported a contract drilling backlog of $1.6 billion as of January 1, 2020, with $802 million expected in 2020, $486 million in 2021, and an aggregate of $323 million in 2022 through 2023 (Source, p.54).",Diamond Offshore Drilling reported a contract backlog of $1.6 billion at the start of fiscal year 2020.
+2026-06-27_22-31-13,Which Loews subsidiaries reported a net loss in 2019?,graph,0.5,0.9999995348064511,0.7383380672201777,"In 2019, the Loews subsidiaries that reported a net loss were:
+
+- Diamond Offshore Drilling, Inc. with a net loss of $175 million (Graph, p.49).
+- Loews Hotels Holding Corporation with a net loss of $31 million (Graph, p.49).
+- Loews Hotels reported a net loss attributable to Loews Corporation of $31 million (Graph, p.59).",Two Loews subsidiaries reported a net loss in 2019: Diamond Offshore Drilling (-$175 million) and Loews Hotels Holding Corporation (-$31 million).
+2026-06-27_22-31-13,What were CNA's insurance premiums in 2019?,graph,0.0,0.0,0.15021498955726115,The graph data does not contain information about CNA's insurance premiums in 2019.,"CNA Financial reported net earned insurance premiums of $7,428 million in fiscal year 2019."
+2026-06-27_22-31-13,Where does Loews Hotels Holding Corporation operate?,graph,,0.9445848181017354,0.22974076520247738,"Loews Hotels Holding Corporation operates in the following cities and locations:
+
+- Chicago, Illinois
+- United States (general)
+- San Diego, California
+- Seattle, Washington
+- Montreal, Canada
+- Miami Beach, Florida
+- Minneapolis, Minnesota
+- Philadelphia, Pennsylvania
+- New York
+- Nashville, Tennessee
+- Tucson, Arizona
+- Orlando
+- Arlington, Texas
+- Atlanta, Georgia
+- Toronto
+- Boston, Massachusetts
+- New Orleans, Louisiana
+- San Francisco
+- Santa Monica
+- Kansas City, Missouri
+- St. Louis
+- Coral Gables","Loews Hotels Holding Corporation operates hotels in multiple U.S. cities including Orlando, Miami Beach, Chicago, San Diego, Seattle, Philadelphia, Nashville, New York, Boston, Atlanta, and New Orleans, as well as Montreal and Toronto in Canada."
+2026-06-27_22-31-13,Who is the parent company of Altium Packaging LLC?,graph,1.0,0.9151292009105308,0.9882232930575809,Altium Packaging LLC is a subsidiary of Loews Corporation.,"Altium Packaging LLC is owned by Loews Corporation, its parent company."
+2026-06-27_22-31-13,What was CNA Financial Corporation's net income in 2018?,graph,1.0,0.7598180670247473,0.9889928670616006,"CNA Financial Corporation reported net income attributable to Loews Corporation of $726 million in 2018 (Graph, IncomeStatement_FY2018).",CNA Financial Corporation generated net income of $726 million attributable to Loews Corporation in fiscal year 2018.
+2026-06-27_22-31-13,What were Diamond Offshore Drilling's contract drilling revenues in 2019?,graph,1.0,1.0,0.7349316806916257,"Diamond Offshore Drilling reported contract drilling revenues of $981 million in 2019 (Graph, IncomeStatement_FY2019).","Diamond Offshore Drilling reported contract drilling revenues of approximately $935 million on a standalone basis, or $981 million as reported in the Loews consolidated income statement for fiscal year 2019."
+2026-06-27_22-31-13,What were Boardwalk Pipeline Partners' operating revenues in 2019?,graph,0.8,0.9360390924083335,0.3870424564622017,"Boardwalk Pipeline Partners reported total projected operating revenues under committed firm agreements of $9,329 million in 2019 (Graph). 
+
+Additionally, the income statement for 2019 shows transportation and storage revenues for Boardwalk Pipelines of $1,266 million and operating revenues and other of $3,938 million, but the specific consolidated operating revenues figure for Boardwalk Pipeline Partners is $9,329 million as per the total projected operating revenues under committed firm agreements (Graph, IncomeStatement_FY2019; Boardwalk Pipeline Partners Total Projected Operating Revenues Under Committed Firm Agreements As Of December 31 2019).","Boardwalk Pipeline Partners reported operating revenues of approximately $1,300 million as a standalone segment in fiscal year 2019. The transportation-and-storage line attributed to Boardwalk Pipelines in the Loews consolidated income statement was $1,266 million."
+2026-06-27_22-31-13,What was Altium Packaging LLC's revenue in 2018?,graph,0.0,0.9999996092645814,0.6134799200396931,"Altium Packaging LLC's revenue in 2018 was $867 million (Graph, p.47).",Altium Packaging LLC reported revenue of approximately $867 million in fiscal year 2018.
+2026-06-27_22-31-13,What were CNA Financial's gross written premiums in 2019?,graph,0.5,0.9219330959120141,0.9934262556836863,"CNA Financial reported gross written premiums totaling $11,704 million in 2019 (Graph, IncomeStatement_FY2019).","CNA Financial reported gross written premiums of $11,704 million in fiscal year 2019."
+2026-06-27_22-31-13,Where does CNA Financial Corporation operate internationally?,graph,0.0,0.9686141454693816,0.7870087894935567,"CNA Financial Corporation operates internationally in Canada, the United Kingdom, Bermuda, the European Union, and Luxembourg.","CNA Financial Corporation operates internationally in the United Kingdom, Canada, Luxembourg, Bermuda, and through Lloyd's of London. It also conducts business in Continental Europe."
+2026-06-27_22-31-13,What was Loews Hotels' equity income from joint ventures in 2019?,graph,0.0,0.882861487482059,0.5193394667207707,"Loews Hotels reported equity income of $69 million in 2019 (Graph, IncomeStatement_FY2019).",Loews Hotels Holding Corporation reported equity income from joint ventures of $69 million in fiscal year 2019.
+2026-06-27_22-31-13,Where does Diamond Offshore Drilling operate?,graph,0.0,0.9572178435964118,0.7575614885480791,"Diamond Offshore Drilling operates in the following locations: Houston, Texas, New Iberia, Louisiana, United States, Aberdeen, Scotland, United Kingdom, Macae, Brazil, Ciudad del Carmen, Mexico, Malaysia, Singapore, Australia, and the U.K. (Graph).","Diamond Offshore Drilling operates internationally with offshore drilling rigs and offices in the United States (Houston, New Iberia, Louisiana), the United Kingdom (Aberdeen, Scotland), Brazil (Macae), Mexico (Ciudad del Carmen), Malaysia, Singapore, and Australia."
+2026-06-27_22-31-13,What was Diamond Offshore Drilling's net loss in 2018?,graph,1.0,0.8465817863952134,0.9949994375297432,"Diamond Offshore Drilling reported a net loss attributable to Loews Corporation of $112 million in 2018 (Graph, IncomeStatement_FY2018).",Diamond Offshore Drilling reported a net loss of $112 million attributable to Loews Corporation in fiscal year 2018.
